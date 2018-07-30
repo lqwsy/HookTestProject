@@ -7,7 +7,12 @@ import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 
+import android.content.Context;
+import android.content.Intent;
+import android.os.BatteryManager;
+import android.os.Bundle;
 import android.util.Log;
+import android.widget.EditText;
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XC_MethodReplacement;
@@ -24,14 +29,18 @@ public class MyXposedEntrance implements IXposedHookLoadPackage {
 	public void handleLoadPackage(LoadPackageParam lpparam) throws Throwable {
 		if(lpparam.packageName.equals(PACKAGE_NAME)){
 			Log.i(TAG,"----------find hook packageName = " + lpparam.packageName);
-			hookLoginResult(lpparam,"com.example.ghjkl.MainActivity","ifLoginSuccess");
+//			hookLoginResult(lpparam,"com.example.ghjkl.MainActivity","ifLoginSuccess");
 //			hookEmptyConstructor(lpparam,"com.example.ghjkl.MainActivity");
 //			hookParamConstructor(lpparam,"com.example.ghjkl.Userinfo");
 //			hookChangeStaticPrivateValue(lpparam,"com.example.ghjkl.Userinfo");
 //			hookPublicMethod(lpparam,"com.example.ghjkl.Userinfo");
 //			hookPrivateMethod(lpparam,"com.example.ghjkl.Userinfo");
-			hookAndReplaceMethod(lpparam,"com.example.ghjkl.Userinfo");
+//			hookAndReplaceMethod(lpparam,"com.example.ghjkl.Userinfo");
+//			hookContext(lpparam,"android.content.ContextWrapper");
+//			hookEditText(lpparam,"com.example.ghjkl.MainActivity");
 		}
+		hookIMEI(lpparam,"android.telephony.TelephonyManager");
+//		hookBatteryManager(lpparam,"com.example.ghjkl.MainActivity");
 	}
 	
 	private static void hookLoginResult(LoadPackageParam lpparam,String className,String methodName){
@@ -41,7 +50,6 @@ public class MyXposedEntrance implements IXposedHookLoadPackage {
 				super.afterHookedMethod(param);
 				Log.i(TAG,"after hook ifLoginSuccess");
 				boolean result = (Boolean) param.getResult();
-				
 				Log.i(TAG,"username = " + param.args[0]);
 				Log.i(TAG,"password = " + param.args[1]);
 				Log.i(TAG,"result = " + result);
@@ -155,6 +163,82 @@ public class MyXposedEntrance implements IXposedHookLoadPackage {
 				return null;
 			}
 		});
+	}
+	
+	/**
+	 * hook得到上下文
+	 * */
+	private static void hookContext(final LoadPackageParam lpparam,final String className){
+		Class<?> clazz = XposedHelpers.findClass(className, lpparam.classLoader);
+		XposedHelpers.findAndHookMethod(clazz, "getApplicationContext", new XC_MethodHook(){
+			@Override
+			protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+				super.afterHookedMethod(param);
+				Context hookContext = (Context) param.getResult();
+				Log.i(TAG,"hookContext packageName : "+hookContext.getPackageName());
+			}
+		});
+	}
+	
+	/**
+	 * hook得到控件
+	 * 修改控件内容
+	 * */
+	private static void hookEditText(final LoadPackageParam lpparam,final String className){
+		XposedHelpers.findAndHookMethod(className, lpparam.classLoader, "onCreate", Bundle.class,new XC_MethodHook(){
+			@Override
+			protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+				super.afterHookedMethod(param);
+				Class<?> clazz = param.thisObject.getClass();
+//				Field field = clazz.getField("username");//获取public的全局变量或父类的public全局变量
+				Field field = clazz.getDeclaredField("username");//获取当前类定义的所有变量，包括private，public，protected，无法获取父类
+				field.setAccessible(true);//设置权限
+				EditText edit = (EditText) field.get(param.thisObject);
+				Log.i(TAG,"before text : "+ edit.getHint().toString());
+				edit.setHint("new hint is change");
+			}
+		});
+	}
+	
+	/**
+	 * hook intent
+	 * 修改getIntExtra
+	 * */
+	private static void hookBatteryManager(final LoadPackageParam lpparam,final String className){
+		XposedHelpers.findAndHookMethod(className, lpparam.classLoader, "getIntExtra",int.class, new XC_MethodHook(){
+			@Override
+			protected void beforeHookedMethod(MethodHookParam param)throws Throwable {
+				super.beforeHookedMethod(param);
+				Intent intent = (Intent) param.thisObject;
+				final String action = intent.getAction();
+				if(action.equals("Intent.ACTION_BATTERY_CHANGED")){
+					Log.i(TAG,"hook battery change intent");
+					if(BatteryManager.EXTRA_LEVEL.equals(param.args[0] + "")){
+						param.setResult(1);
+						Log.i(TAG,"change battery to 1");
+					}else if ("status".equals(param.args[0] + "")) {
+						Log.i(TAG,"battery need not to change");
+                        param.setResult(BatteryManager.BATTERY_STATUS_NOT_CHARGING);
+                    }
+				}
+			}
+		});
+	}
+	
+	/**
+	 * hook 修改手机imei
+	 * */
+	private static void hookIMEI(final LoadPackageParam lpparam,final String className){
+		XposedHelpers.findAndHookMethod(className, lpparam.classLoader, "getDeviceId", new Object[]{new XC_MethodHook(){
+			@Override
+			protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+				super.afterHookedMethod(param);
+				Log.i(TAG,"packageName : "+lpparam.packageName);
+				String newImei = "00000000000000";
+				Log.i(TAG,"DeviceId : "+param.getResult().toString());
+				param.setResult(newImei);
+			}
+		}});
 	}
 	
 	private static void getClassInfo(Class clazz) {
